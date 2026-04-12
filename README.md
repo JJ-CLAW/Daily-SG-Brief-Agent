@@ -1,5 +1,7 @@
 # Daily SG Brief Agent
 
+![Python](https://img.shields.io/badge/Python-3.10+-blue) ![GEMINI API](https://img.shields.io/badge/Gemini-API-green) ![Personal Project](https://img.shields.io/badge/Project-Personal-orange)
+
 A small Python tool that builds a **morning briefing** and sends it to **Telegram** as one HTML message. Each run includes:
 
 - **Headlines** from an RSS feed (default: [Google News Singapore EN](https://news.google.com/rss?hl=en-SG&gl=SG&ceid=SG:en))
@@ -80,9 +82,9 @@ Run the script from PowerShell (adjust execution policy if needed):
 
 ## What I learned
 
+Overall agent building and local deployment for simple tasks. Leveraged on basic web scraping knowledge from earlier projects to build an agent that provides a daily brief of top news in SG (& worldwide). Learnt that not all API calls require API keys, and certain tasks can be simplified to achieve the initial requirements. Pretty cool to have it delivered on Telegram, a messenger I use daily! 
 - **Telegram `chat_id` is easy to get wrong.** It must identify the *recipient* (your user, a group, or a channel), not another bot. The API rejects bot-to-bot delivery with a clear 403.
 - **HTTP client errors can leak secrets.** Default `httpx` traces include the full URL, which embeds the bot token. It is safer to handle failed `sendMessage` responses explicitly and surface only status and Telegram’s `description`.
-- **`ZoneInfo("Asia/Singapore")` needs data on Windows.** Shipping `tzdata` in `requirements.txt` avoids “no time zone found” surprises on machines without IANA data.
 - **Scheduling has two meanings of “09:30”.** A Windows daily task uses the PC’s local clock; `brief_agent serve` uses a fixed `Asia/Singapore` cron. Pick one deliberately if you care which wall-clock the brief follows.
 - **RSS plus scraping keeps the stack small.** Headlines come from a feed without a news API key; weather uses a simple HTTP fetch and parsing, which is enough for a personal brief.
 
