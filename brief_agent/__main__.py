@@ -20,7 +20,36 @@ from .format_brief import format_brief
 from .motivation import load_motivation_lines, motivation_for_day
 from .telegram_send import send_telegram_html
 
+try:
+    from .gemini_brief import generate_brief_with_gemini
+except ImportError:  # pragma: no cover - optional until google-genai installed
+    generate_brief_with_gemini = None  # type: ignore[misc, assignment]
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _print_gemini_failure_hints(err: BaseException) -> None:
+    """Explain common Gemini 429 / quota messages (not always 'you used the whole budget')."""
+    msg = str(err)
+    if "RESOURCE_EXHAUSTED" in msg or "429" in msg or "quota" in msg.lower():
+        print(
+            "Hint: Automatic tool calling sends several generateContent requests per run "
+            "(per-minute limits can trip before daily totals look full).",
+            file=sys.stderr,
+        )
+    if "limit: 0" in msg or "free_tier" in msg.lower():
+        print(
+            "Hint: limit 0 on a model often means that model has no free quota for your "
+            "project (e.g. deprecated model or billing not linked). Try GEMINI_MODEL=gemini-2.5-flash "
+            "and see https://ai.google.dev/gemini-api/docs/troubleshooting",
+            file=sys.stderr,
+        )
+    if "503" in msg or "UNAVAILABLE" in msg or "high demand" in msg.lower():
+        print(
+            "Hint: 503 from Google is usually temporary; retry in a few minutes or set "
+            "GEMINI_MODEL to another Flash variant (e.g. gemini-2.5-flash-lite).",
+            file=sys.stderr,
+        )
 
 
 def _env_path() -> Path:
@@ -49,17 +78,44 @@ def build_and_send() -> None:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     )
+    when = datetime.now(ZoneInfo("Asia/Singapore"))
+    rss = rss_url or DEFAULT_RSS_URL
+    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+
     with httpx.Client(headers={"User-Agent": ua}) as client:
-        headlines = fetch_top_headlines(
-            client,
-            url=rss_url or DEFAULT_RSS_URL,
-            limit=headline_limit,
-        )
-        weather = fetch_singapore_weather(client)
-        motivation_lines = load_motivation_lines(motivations_path)
-        when = datetime.now(ZoneInfo("Asia/Singapore"))
-        motivation = motivation_for_day(motivation_lines, when)
-        message = format_brief(headlines, weather, motivation, when=when)
+        if gemini_key and generate_brief_with_gemini is not None:
+            try:
+                message = generate_brief_with_gemini(
+                    http_client=client,
+                    rss_url=rss,
+                    headline_limit=headline_limit,
+                    motivations_path=motivations_path,
+                    when=when,
+                    model=os.environ.get("GEMINI_MODEL", "").strip() or None,
+                    api_key=gemini_key,
+                )
+            except Exception as err:
+                print(f"Gemini agent failed ({err}); using template brief.", file=sys.stderr)
+                _print_gemini_failure_hints(err)
+                headlines = fetch_top_headlines(
+                    client, url=rss, limit=headline_limit
+                )
+                weather = fetch_singapore_weather(client)
+                motivation_lines = load_motivation_lines(motivations_path)
+                motivation = motivation_for_day(motivation_lines, when)
+                message = format_brief(headlines, weather, motivation, when=when)
+        else:
+            if gemini_key and generate_brief_with_gemini is None:
+                print(
+                    "GEMINI_API_KEY is set but google-genai is not installed; "
+                    "using template brief. pip install -r requirements.txt",
+                    file=sys.stderr,
+                )
+            headlines = fetch_top_headlines(client, url=rss, limit=headline_limit)
+            weather = fetch_singapore_weather(client)
+            motivation_lines = load_motivation_lines(motivations_path)
+            motivation = motivation_for_day(motivation_lines, when)
+            message = format_brief(headlines, weather, motivation, when=when)
         if len(message) > 4000:
             message = message[:3997] + "..."
         send_telegram_html(client, token, chat_id, message)

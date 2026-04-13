@@ -11,10 +11,12 @@ A small Python tool that builds a **morning briefing** and sends it to **Telegra
 - **Singapore weather** (scraped from a public source used in code)
 - **Thought for today** — one line from `motivations.txt`, chosen deterministically for that calendar date in **Asia/Singapore** (same line all day)
 
+**Optional Gemini mode:** if you set `GEMINI_API_KEY`, **Gemini** runs a **tool loop** (same RSS, weather, and motivation sources, plus **`web_search`** via DuckDuckGo instant answers) and composes the Telegram HTML brief. If the key is missing or the call fails, the app falls back to the fixed template.
+
 ## Requirements
 
 - Python 3.10+ recommended
-- Dependencies (see `requirements.txt`): **httpx**, **feedparser**, **python-dotenv**, **APScheduler**, **tzdata**
+- Dependencies (see `requirements.txt`): **httpx**, **feedparser**, **python-dotenv**, **APScheduler**, **tzdata**, **google-genai** (for Gemini mode)
 - A Telegram **bot token** from [@BotFather](https://t.me/BotFather)
 - Your **user** chat id (or a group/channel id the bot may post to).  
   **Important:** `TELEGRAM_CHAT_ID` must not be another bot’s id — Telegram returns *“bots can’t send messages to bots”*.
@@ -44,6 +46,9 @@ A small Python tool that builds a **morning briefing** and sends it to **Telegra
    | `NEWS_RSS_URL` | No | Override RSS URL |
    | `HEADLINE_COUNT` | No | Number of headlines (default `5`) |
    | `DAILY_BRIEF_ENV` | No | Path to an alternate `.env` file |
+   | `GEMINI_API_KEY` | No | [Google AI Studio](https://aistudio.google.com/apikey) key — enables Gemini tool-calling brief |
+   | `GEMINI_MODEL` | No | Model id (default `gemini-2.5-flash`; avoid deprecated `gemini-2.0-flash`) |
+   | `GEMINI_MAX_TOOL_ROUNDS` | No | Cap on automatic tool rounds (default `12`) |
 
 4. Optional: edit `motivations.txt` — one quote per line; `#` comments and leading `- ` / `• ` are supported.
 
@@ -63,6 +68,21 @@ python -m brief_agent serve
 
 Stop with `Ctrl+C`. For production you might run `serve` under a process manager, or use OS scheduling (below).
 
+### Gemini agent (tools)
+
+With `GEMINI_API_KEY` set, the model may call:
+
+| Tool | Purpose |
+|------|--------|
+| `get_rss_headlines` | Headlines from your configured RSS feed |
+| `get_singapore_weather` | Live Singapore weather (Open-Meteo) |
+| `get_todays_motivation` | Quote of the day from `motivations.txt` |
+| `web_search` | Short web lookups via [DuckDuckGo Instant Answer](https://api.duckduckgo.com/) (no API key) |
+
+Google’s **built-in Google Search grounding** cannot be combined with custom function tools on many **Gemini 2.x** models (the API returns an error), so portable **`web_search`** is implemented this way. If Gemini errors or returns nothing, the sender falls back to the non-LLM template.
+
+**429 / “quota” / `limit: 0`:** The dashboard can look fine while calls still fail. Common causes: (1) **`gemini-2.0-flash` is deprecated** and may show **free-tier limit 0** — use **`gemini-2.5-flash`** (default in code). (2) **Tool mode uses several `generateContent` requests per brief**, so **per-minute** caps can hit before daily usage looks high. (3) Some accounts need a **billing-linked** project before free allowances apply — see [Troubleshooting](https://ai.google.dev/gemini-api/docs/troubleshooting).
+
 ## Windows Task Scheduler
 
 `scripts/register-windows-task.ps1` registers a daily task at **09:30 in the PC’s local time zone**, running `python -m brief_agent once`. That is **not** the same as 09:30 SGT if the machine is elsewhere.
@@ -81,6 +101,8 @@ Run the script from PowerShell (adjust execution policy if needed):
 |------|------|
 | `brief_agent/` | Package: fetch news/weather, format message, Telegram send |
 | `brief_agent/__main__.py` | CLI entry (`once`, `serve`) |
+| `brief_agent/gemini_brief.py` | Optional Gemini tool loop → HTML brief |
+| `brief_agent/web_search.py` | DuckDuckGo instant answer helper for `web_search` |
 | `motivations.txt` | Daily quote pool |
 | `.env` | Secrets and options (not committed; see `.gitignore`) |
 
