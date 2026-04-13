@@ -1,6 +1,7 @@
 # Daily SG Brief Agent
 
 ![Python 3.10+](https://img.shields.io/badge/python-3.10+-3776AB?style=flat&logo=python&logoColor=white)
+![Gemini API](https://img.shields.io/badge/Gemini-_API-26A5E4?style=flat&logo=telegram&logoColor=white)
 ![Telegram Bot API](https://img.shields.io/badge/Telegram-Bot_API-26A5E4?style=flat&logo=telegram&logoColor=white)
 ![Headlines RSS](https://img.shields.io/badge/Headlines-RSS-F97316?style=flat)
 ![Personal project](https://img.shields.io/badge/project-personal-orange?style=flat)
@@ -11,7 +12,14 @@ A small Python tool that builds a **morning briefing** and sends it to **Telegra
 - **Singapore weather** (scraped from a public source used in code)
 - **Thought for today** — one line from `motivations.txt`, chosen deterministically for that calendar date in **Asia/Singapore** (same line all day)
 
-**Optional Gemini mode:** if you set `GEMINI_API_KEY`, **Gemini** runs a **tool loop** (same RSS, weather, and motivation sources, plus **`web_search`** via DuckDuckGo instant answers) and composes the Telegram HTML brief. If the key is missing or the call fails, the app falls back to the fixed template.
+**Optional Gemini mode:** if you set `GEMINI_API_KEY`, the agent switches to an **AI-powered composition mode** using Google's Gemini with automatic function calling. Instead of a fixed template, Gemini acts as an intelligent agent that:
+
+- **Dynamically calls tools** to gather information: RSS headlines, Singapore weather, daily motivation, and web searches for additional context
+- **Makes decisions** about what information to include and how to structure the brief
+- **Composes natural language** briefs that adapt to current events and can supplement RSS news with web searches for timely facts (e.g., sports scores, product releases)
+- **Outputs clean Telegram HTML** with proper formatting, links, and structure
+
+The agent follows a system instruction to create engaging morning briefings while staying under Telegram's message limits. If the Gemini API call fails or the key is missing, the app automatically falls back to the deterministic template mode.
 
 ## Requirements
 
@@ -108,7 +116,7 @@ Run the script from PowerShell (adjust execution policy if needed):
 
 ## What I learned
 
-Overall agent building and local deployment for simple tasks. Built on basic web scraping from earlier projects to ship an agent that surfaces top news in Singapore and worldwide. Not every integration needs a paid API key—RSS and a small scrape are enough for a first version. Having the brief land in Telegram, which I already use daily, made it stick.
+Overall agent building (using Gemini as the LLM) and local deployment for simple tasks. Built on basic web scraping from earlier projects to ship an agent that surfaces top news in Singapore and worldwide - with a motivational quote to kickstart your day. Not every integration needs a paid API key—RSS and a small scrape are enough for a first version. It was cool to send the message via Telegram, a messenger I use daily!
 
 - **Telegram `chat_id` is easy to get wrong.** It must identify the *recipient* (your user, a group, or a channel), not another bot. The API rejects bot-to-bot delivery with a clear 403.
 - **HTTP client errors can leak secrets.** Default `httpx` traces include the full URL, which embeds the bot token. It is safer to handle failed `sendMessage` responses explicitly and surface only status and Telegram’s `description`.
