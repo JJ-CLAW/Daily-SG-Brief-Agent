@@ -22,6 +22,16 @@ def _friendly_date_singapore(when: datetime) -> str:
     return dt.strftime("%A, %d %B %Y")
 
 
+def _time_of_day_greeting(when: datetime) -> str:
+    hour = when.astimezone(ZoneInfo("Asia/Singapore")).hour
+    if hour < 12:
+        return "morning"
+    elif hour < 17:
+        return "afternoon"
+    else:
+        return "evening"
+
+
 def generate_brief_with_gemini(
     *,
     http_client: httpx.Client,
@@ -77,8 +87,10 @@ def generate_brief_with_gemini(
         except Exception as exc:  # noqa: BLE001 — return error to model, keep tool loop alive
             return {"query": query, "error": str(exc), "abstract": None}
 
+    greeting = _time_of_day_greeting(when)
+
     system_instruction = (
-        "You write a single morning briefing message for Telegram. "
+        "You write a daily briefing message for Telegram. "
         "Use the tools when you need data; do not invent headlines, URLs, or weather. "
         "Output ONLY Telegram HTML: use <b>, <i>, <a href=\"https://...\">, <code> as needed. "
         "Do not use Markdown. Escape plain text that is not inside tags (&, <, >). "
@@ -88,7 +100,8 @@ def generate_brief_with_gemini(
     )
 
     user_prompt = (
-        f"Today is {day_label} (Singapore time). Build today's morning briefing. "
+        f"Today is {day_label} (Singapore time). It is currently the {greeting}. "
+        f"Build today's briefing with a 'Good {greeting}!' greeting. "
         "Call tools as needed. Include news (from RSS tool unless you deliberately supplement with web_search), "
         "Singapore weather, and today's motivation."
     )
