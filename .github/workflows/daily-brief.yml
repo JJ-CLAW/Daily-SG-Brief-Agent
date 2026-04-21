@@ -8,6 +8,7 @@ on:
 jobs:
   send:
     runs-on: ubuntu-latest
+    environment: SG_BRIEF_AGENT
     steps:
       - uses: actions/checkout@v4
 
