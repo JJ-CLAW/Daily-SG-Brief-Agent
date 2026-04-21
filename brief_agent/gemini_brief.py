@@ -102,8 +102,9 @@ def generate_brief_with_gemini(
     user_prompt = (
         f"Today is {day_label} (Singapore time). It is currently the {greeting}. "
         f"Build today's briefing with a 'Good {greeting}!' greeting. "
-        "Call tools as needed. Include news (from RSS tool unless you deliberately supplement with web_search), "
-        "Singapore weather, and today's motivation."
+        "Call tools as needed. Include news: first try the RSS tool; if it returns empty or fails, "
+        "use web_search to find today's top Singapore or world news instead. "
+        "Include Singapore weather and today's motivation."
     )
 
     client = genai.Client(api_key=key)
