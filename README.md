@@ -21,6 +21,10 @@ A small Python tool that builds a **morning briefing** and sends it to **Telegra
 
 The agent follows a system instruction to create engaging morning briefings while staying under Telegram's message limits. If the Gemini API call fails or the key is missing, the app automatically falls back to the deterministic template mode.
 
+**V1:** The feature built has 2 execution modes as highlighted above - (1) deterministic and following a set sequence, where the script fetches all the responses and compiles it for the end user, and (2) an agentic mode where you plug & play your LLM (Gemini in my case) to allow the agent to choose which tools & message style it will deploy for a message to the end user. Toggling between (1) & (2) is simple, and just requires your LLM API key. However, there was a drawback where the PC needs to be online and run the script locally, in order for the end user to receive the daily brief on Telegram. 
+
+**V1.1:** Introduced capability to run the template script / agent online, hosted on Github servers. Surprised to find that it is FOC and easy to setup (1-time).
+
 ## Requirements
 
 - Python 3.10+ recommended
