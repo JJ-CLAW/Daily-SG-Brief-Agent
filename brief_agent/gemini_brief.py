@@ -93,6 +93,7 @@ def generate_brief_with_gemini(
         "You write a daily briefing message for Telegram. "
         "Use the tools when you need data; do not invent headlines, URLs, or weather. "
         "Output ONLY Telegram HTML: use <b>, <i>, <a href=\"https://...\">, <code> as needed. "
+        "Never use <br>, <br/>, <div>, <p>, or any other unsupported tag — use plain newlines (\\n) for line breaks. "
         "Do not use Markdown. Escape plain text that is not inside tags (&, <, >). "
         "Structure: greeting with the date, top stories with clickable links when URLs exist, "
         "Singapore weather, thought for today (italic), short sign-off. "
@@ -130,4 +131,7 @@ def generate_brief_with_gemini(
     text = (response.text or "").strip()
     if not text:
         raise RuntimeError("Gemini returned an empty brief.")
+    # Telegram HTML only allows a small tag subset; replace unsupported line-break tags with newlines.
+    import re
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
     return text
