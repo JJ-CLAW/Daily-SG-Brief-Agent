@@ -66,18 +66,28 @@ def generate_brief_with_gemini(
         except (TypeError, ValueError):
             lim = headline_limit
         lim = max(1, min(lim, 20))
-        pairs = fetch_top_headlines(http_client, url=rss_url, limit=lim)
-        return {
-            "headlines": [{"title": t, "url": u} for t, u in pairs],
-        }
+        try:
+            pairs = fetch_top_headlines(http_client, url=rss_url, limit=lim)
+            print(f"[tool] get_rss_headlines: got {len(pairs)} headlines")
+            return {"headlines": [{"title": t, "url": u} for t, u in pairs]}
+        except Exception as exc:
+            print(f"[tool] get_rss_headlines failed: {exc}")
+            return {"headlines": [], "error": f"RSS fetch failed: {exc}"}
 
     def get_singapore_weather() -> dict:
         """Current weather in Singapore (conditions, temperature, humidity, wind)."""
-        return {"summary": fetch_singapore_weather(http_client)}
+        try:
+            summary = fetch_singapore_weather(http_client)
+            print(f"[tool] get_singapore_weather: {summary}")
+            return {"summary": summary}
+        except Exception as exc:
+            print(f"[tool] get_singapore_weather failed: {exc}")
+            return {"summary": "Weather data temporarily unavailable.", "error": str(exc)}
 
     def get_todays_motivation() -> dict:
         """Today's motivational quote (deterministic for the Singapore calendar date)."""
         quote = motivation_for_day(motivation_lines, when)
+        print(f"[tool] get_todays_motivation: {quote[:60]}...")
         return {"quote": quote}
 
     def web_search(query: str) -> dict:
@@ -131,6 +141,7 @@ def generate_brief_with_gemini(
     text = (response.text or "").strip()
     if not text:
         raise RuntimeError("Gemini returned an empty brief.")
+    print(f"[gemini] response length={len(text)}; preview={text[:200]!r}")
     # Telegram HTML only allows a small tag subset; replace unsupported line-break tags with newlines.
     import re
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
