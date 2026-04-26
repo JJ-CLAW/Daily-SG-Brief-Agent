@@ -59,6 +59,23 @@ def generate_brief_with_gemini(
     motivation_lines = load_motivation_lines(motivations_path)
     day_label = _friendly_date_singapore(when)
 
+    # Pre-fetch core data before entering the Gemini tool loop.
+    # This guarantees weather and news appear in the brief even if Gemini skips tool calls
+    # (which it can do with automatic_function_calling when it thinks it already knows the answer).
+    _prefetch_headlines: list[tuple[str, str]] = []
+    _prefetch_weather = ""
+    _prefetch_motivation = motivation_for_day(motivation_lines, when)
+    try:
+        _prefetch_headlines = fetch_top_headlines(http_client, url=rss_url, limit=headline_limit)
+        print(f"[prefetch] headlines: {len(_prefetch_headlines)}")
+    except Exception as exc:
+        print(f"[prefetch] headlines failed: {exc}")
+    try:
+        _prefetch_weather = fetch_singapore_weather(http_client)
+        print(f"[prefetch] weather: {_prefetch_weather}")
+    except Exception as exc:
+        print(f"[prefetch] weather failed: {exc}")
+
     def get_rss_headlines(limit: int | None = None) -> dict:
         """Fetch top news headlines from the configured RSS feed (title and URL per story). Use for general news; prefer this over web_search for headlines."""
         try:
@@ -101,21 +118,31 @@ def generate_brief_with_gemini(
 
     system_instruction = (
         "You write a daily briefing message for Telegram. "
-        "Use the tools when you need data; do not invent headlines, URLs, or weather. "
+        "The user prompt contains pre-fetched data (weather, headlines, motivation) — use it directly. "
+        "Do not call get_rss_headlines or get_singapore_weather when that data is already supplied. "
+        "Only call web_search if the HEADLINES section is empty and you need to find news. "
+        "Do not invent headlines, URLs, or weather. "
         "Output ONLY Telegram HTML: use <b>, <i>, <a href=\"https://...\">, <code> as needed. "
         "Never use <br>, <br/>, <div>, <p>, or any other unsupported tag — use plain newlines (\\n) for line breaks. "
         "Do not use Markdown. Escape plain text that is not inside tags (&, <, >). "
         "Structure: greeting with the date, top stories with clickable links when URLs exist, "
         "Singapore weather, thought for today (italic), short sign-off. "
-        "Stay under 3800 characters. If a tool returns empty data, say so briefly instead of fabricating."
+        "Stay under 3800 characters."
+    )
+
+    _headline_block = (
+        "\n".join(f"- {t} <{u}>" for t, u in _prefetch_headlines)
+        if _prefetch_headlines
+        else "(none — call web_search to find today's top Singapore or world news)"
     )
 
     user_prompt = (
         f"Today is {day_label} (Singapore time). It is currently the {greeting}. "
-        f"Build today's briefing with a 'Good {greeting}!' greeting. "
-        "Call tools as needed. Include news: first try the RSS tool; if it returns empty or fails, "
-        "use web_search to find today's top Singapore or world news instead. "
-        "Include Singapore weather and today's motivation."
+        f"Build today's briefing with a 'Good {greeting}!' greeting.\n\n"
+        f"PRE-FETCHED DATA (use directly, do not re-fetch):\n"
+        f"WEATHER: {_prefetch_weather or 'unavailable'}\n"
+        f"MOTIVATION: {_prefetch_motivation}\n"
+        f"HEADLINES:\n{_headline_block}"
     )
 
     client = genai.Client(api_key=key)
