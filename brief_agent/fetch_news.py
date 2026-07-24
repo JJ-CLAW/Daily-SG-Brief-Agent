@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import feedparser
 import httpx
+from googlenewsdecoder import gnewsdecoder
 
 # Singapore-focused world/top stories via Google News RSS
 DEFAULT_RSS_URL = (
@@ -16,13 +17,63 @@ _FALLBACK_URLS: list[str] = [
     "https://feeds.bbci.co.uk/news/world/rss.xml",
 ]
 
+_GOOGLE_NEWS_HOST = "news.google.com"
+
+
+def _link_is_reachable(client: httpx.Client, url: str) -> bool:
+    """Best-effort check that a headline link actually resolves."""
+    try:
+        resp = client.head(url, timeout=8.0, follow_redirects=True)
+        if resp.status_code < 400:
+            return True
+        if resp.status_code in (405, 403):
+            # Some servers reject HEAD; retry with GET before giving up.
+            resp = client.get(url, timeout=8.0, follow_redirects=True)
+            return resp.status_code < 400
+        return False
+    except Exception:
+        return False
+
+
+def _resolve_link(client: httpx.Client, link: str) -> str | None:
+    """Return a link the user can actually open, or None if it's dead.
+
+    Google News RSS links are opaque redirect IDs (news.google.com/rss/articles/<id>) whose
+    server-side redirect can silently break — Google resolves the ID to an "invalid web address"
+    for some entries, which browsers surface as a redirect error even though our own HEAD/GET
+    check against the intermediate news.google.com page returns 200 OK. Decoding to the real
+    publisher URL up front avoids sending readers through that redirect at all.
+    """
+    try:
+        is_google_news = httpx.URL(link).host == _GOOGLE_NEWS_HOST
+    except Exception:
+        is_google_news = False
+
+    if is_google_news:
+        try:
+            result = gnewsdecoder(link, interval=1)
+        except Exception as exc:
+            print(f"[news] gnewsdecoder error for {link}: {exc}")
+            return None
+        if not result or not result.get("status"):
+            msg = (result or {}).get("message") if result else "no result"
+            print(f"[news] could not decode Google News link ({msg}): {link}")
+            return None
+        decoded = result.get("decoded_url")
+        if not decoded:
+            return None
+        link = decoded
+
+    return link if _link_is_reachable(client, link) else None
+
 
 def fetch_top_headlines(
     client: httpx.Client,
     url: str = DEFAULT_RSS_URL,
     limit: int = 5,
 ) -> list[tuple[str, str]]:
-    """Return list of (title, link) for top entries, falling back to alternative sources if blocked."""
+    """Return list of (title, link) for top entries, falling back to alternative sources if blocked
+    or if individual links do not resolve."""
     urls_to_try = [url] + [u for u in _FALLBACK_URLS if u != url]
 
     for attempt_url in urls_to_try:
@@ -35,17 +86,34 @@ def fetch_top_headlines(
                 print(f"[news] {attempt_url} returned HTML (IP-blocked); trying next source")
                 continue
             parsed = feedparser.parse(resp.content)
-            out: list[tuple[str, str]] = []
-            for entry in parsed.entries[:limit]:
+            candidates: list[tuple[str, str]] = []
+            for entry in parsed.entries:
                 title = getattr(entry, "title", "").strip()
                 link = getattr(entry, "link", "").strip()
                 if title and link:
-                    out.append((title, link))
+                    candidates.append((title, link))
+            if not candidates:
+                print(f"[news] {attempt_url} returned 0 entries; trying next source")
+                continue
+
+            # Check more candidates than `limit` so a few dead/timed-out redirect links
+            # don't shrink the final headline count.
+            out: list[tuple[str, str]] = []
+            checked = 0
+            for title, link in candidates[: limit * 3]:
+                checked += 1
+                resolved = _resolve_link(client, link)
+                if resolved:
+                    out.append((title, resolved))
+                    if len(out) >= limit:
+                        break
+                else:
+                    print(f"[news] dropping unreachable link: {link}")
             if out:
                 if attempt_url != url:
                     print(f"[news] primary source blocked; using fallback: {attempt_url}")
                 return out
-            print(f"[news] {attempt_url} returned 0 entries; trying next source")
+            print(f"[news] {attempt_url}: no reachable links among {checked} checked; trying next source")
         except Exception as exc:
             print(f"[news] {attempt_url} failed ({exc}); trying next source")
 

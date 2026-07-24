@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from .fetch_news import DEFAULT_RSS_URL, fetch_top_headlines
 from .fetch_weather import fetch_singapore_weather
 from .format_brief import format_brief
-from .motivation import load_motivation_lines, motivation_for_day
+from .motivation import fetch_daily_motivation, load_motivation_lines
 from .telegram_send import send_telegram_html
 
 try:
@@ -102,7 +102,7 @@ def build_and_send() -> None:
                 )
                 weather = fetch_singapore_weather(client)
                 motivation_lines = load_motivation_lines(motivations_path)
-                motivation = motivation_for_day(motivation_lines, when)
+                motivation = fetch_daily_motivation(client, motivation_lines, when)
                 message = format_brief(headlines, weather, motivation, when=when)
         else:
             if gemini_key and generate_brief_with_gemini is None:
@@ -114,7 +114,7 @@ def build_and_send() -> None:
             headlines = fetch_top_headlines(client, url=rss, limit=headline_limit)
             weather = fetch_singapore_weather(client)
             motivation_lines = load_motivation_lines(motivations_path)
-            motivation = motivation_for_day(motivation_lines, when)
+            motivation = fetch_daily_motivation(client, motivation_lines, when)
             message = format_brief(headlines, weather, motivation, when=when)
         if len(message) > 4000:
             message = message[:3997] + "..."

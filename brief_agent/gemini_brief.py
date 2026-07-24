@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import html as html_module
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -13,7 +15,7 @@ from google.genai import types
 
 from .fetch_news import fetch_top_headlines
 from .fetch_weather import fetch_singapore_weather
-from .motivation import load_motivation_lines, motivation_for_day
+from .motivation import fetch_daily_motivation, load_motivation_lines
 from .web_search import duckduckgo_instant_answer
 
 
@@ -30,6 +32,24 @@ def _time_of_day_greeting(when: datetime) -> str:
         return "afternoon"
     else:
         return "evening"
+
+
+# Telegram's HTML parser only understands &amp; &lt; &gt; &quot; (and numeric &#39;) — any other
+# named entity (e.g. &mdash;, &deg;) shows up literally instead of rendering. Gemini sometimes
+# "escapes" ordinary punctuation into entities even when told not to, so unescape everything
+# except the handful Telegram actually needs kept as markup.
+_SAFE_ENTITIES = {"amp;", "lt;", "gt;", "quot;", "#39;", "apos;"}
+
+
+def _fix_stray_entities(text: str) -> str:
+    def repl(match: re.Match[str]) -> str:
+        entity = match.group(0)
+        if entity[1:] in _SAFE_ENTITIES:
+            return entity
+        char = html_module.unescape(entity)
+        return char if char != entity else entity
+
+    return re.sub(r"&#?[a-zA-Z0-9]+;", repl, text)
 
 
 def generate_brief_with_gemini(
@@ -63,16 +83,21 @@ def generate_brief_with_gemini(
     # This guarantees weather and news appear in the brief even if Gemini skips tool calls
     # (which it can do with automatic_function_calling when it thinks it already knows the answer).
     _prefetch_headlines: list[tuple[str, str]] = []
-    _prefetch_weather = ""
-    _prefetch_motivation = motivation_for_day(motivation_lines, when)
+    _prefetch_weather_summary = ""
+    _prefetch_weather_time = ""
+    _prefetch_weather_advice = ""
+    _prefetch_motivation = fetch_daily_motivation(http_client, motivation_lines, when)
     try:
         _prefetch_headlines = fetch_top_headlines(http_client, url=rss_url, limit=headline_limit)
         print(f"[prefetch] headlines: {len(_prefetch_headlines)}")
     except Exception as exc:
         print(f"[prefetch] headlines failed: {exc}")
     try:
-        _prefetch_weather = fetch_singapore_weather(http_client)
-        print(f"[prefetch] weather: {_prefetch_weather}")
+        _report = fetch_singapore_weather(http_client)
+        _prefetch_weather_summary = _report.summary
+        _prefetch_weather_time = _report.reported_time
+        _prefetch_weather_advice = _report.umbrella_advice
+        print(f"[prefetch] weather: {_report.as_text!r}")
     except Exception as exc:
         print(f"[prefetch] weather failed: {exc}")
 
@@ -92,18 +117,24 @@ def generate_brief_with_gemini(
             return {"headlines": [], "error": f"RSS fetch failed: {exc}"}
 
     def get_singapore_weather() -> dict:
-        """Current weather in Singapore (conditions, temperature, humidity, wind)."""
+        """Current weather in Singapore: conditions, temperature, humidity, wind, the time it was
+        reported, and umbrella advice based on the chance of rain before you reach the office."""
         try:
-            summary = fetch_singapore_weather(http_client)
-            print(f"[tool] get_singapore_weather: {summary}")
-            return {"summary": summary}
+            report = fetch_singapore_weather(http_client)
+            print(f"[tool] get_singapore_weather: {report.as_text!r}")
+            return {
+                "summary": report.summary,
+                "reported_time": report.reported_time,
+                "rain_chance_percent": report.rain_chance,
+                "umbrella_advice": report.umbrella_advice,
+            }
         except Exception as exc:
             print(f"[tool] get_singapore_weather failed: {exc}")
             return {"summary": "Weather data temporarily unavailable.", "error": str(exc)}
 
     def get_todays_motivation() -> dict:
-        """Today's motivational quote (deterministic for the Singapore calendar date)."""
-        quote = motivation_for_day(motivation_lines, when)
+        """Today's motivational quote (fetched fresh daily, falling back to a local pool)."""
+        quote = fetch_daily_motivation(http_client, motivation_lines, when)
         print(f"[tool] get_todays_motivation: {quote[:60]}...")
         return {"quote": quote}
 
@@ -122,16 +153,25 @@ def generate_brief_with_gemini(
         "Do not call get_rss_headlines or get_singapore_weather when that data is already supplied. "
         "Only call web_search if the HEADLINES section is empty and you need to find news. "
         "Do not invent headlines, URLs, or weather. "
+        "WEATHER_TIME/WEATHER_SUMMARY/WEATHER_ADVICE are the reported time, conditions, and umbrella "
+        "advice — include all three, do not drop the umbrella advice. The weather section header must "
+        "read exactly '<b>Singapore Weather (reported at WEATHER_TIME SGT)</b>' with the actual time "
+        "filled in, followed by WEATHER_SUMMARY and WEATHER_ADVICE each on their own line. "
+        "List top stories as a numbered list (1. 2. 3. ...), not bullets. "
         "Output ONLY Telegram HTML: use <b>, <i>, <a href=\"https://...\">, <code> as needed. "
         "Never use <br>, <br/>, <div>, <p>, or any other unsupported tag — use plain newlines (\\n) for line breaks. "
-        "Do not use Markdown. Escape plain text that is not inside tags (&, <, >). "
-        "Structure: greeting with the date, top stories with clickable links when URLs exist, "
-        "Singapore weather, thought for today (italic), short sign-off. "
+        "Do not use Markdown. Telegram's HTML parser ONLY understands &amp; &lt; &gt; &quot; as entities — "
+        "do not write any other HTML entity (no &mdash;, &deg;, &ndash;, &nbsp;, &hellip;, curly-quote "
+        "entities, etc.). Use the real Unicode character directly for things like em dashes (—) and "
+        "degree signs (°); only escape a literal &, <, or > that is not part of a tag. "
+        "Structure: greeting with the date, numbered top stories with clickable links when URLs exist, "
+        "Singapore weather (with reported time in the header and umbrella advice), thought for today "
+        "(italic), short sign-off. "
         "Stay under 3800 characters."
     )
 
     _headline_block = (
-        "\n".join(f"- {t} <{u}>" for t, u in _prefetch_headlines)
+        "\n".join(f"{i}. {t} <{u}>" for i, (t, u) in enumerate(_prefetch_headlines, start=1))
         if _prefetch_headlines
         else "(none — call web_search to find today's top Singapore or world news)"
     )
@@ -140,7 +180,9 @@ def generate_brief_with_gemini(
         f"Today is {day_label} (Singapore time). It is currently the {greeting}. "
         f"Build today's briefing with a 'Good {greeting}!' greeting.\n\n"
         f"PRE-FETCHED DATA (use directly, do not re-fetch):\n"
-        f"WEATHER: {_prefetch_weather or 'unavailable'}\n"
+        f"WEATHER_TIME: {_prefetch_weather_time or 'unknown'}\n"
+        f"WEATHER_SUMMARY: {_prefetch_weather_summary or 'unavailable'}\n"
+        f"WEATHER_ADVICE: {_prefetch_weather_advice or ''}\n"
         f"MOTIVATION: {_prefetch_motivation}\n"
         f"HEADLINES:\n{_headline_block}"
     )
@@ -170,6 +212,6 @@ def generate_brief_with_gemini(
         raise RuntimeError("Gemini returned an empty brief.")
     print(f"[gemini] response length={len(text)}; preview={text[:200]!r}")
     # Telegram HTML only allows a small tag subset; replace unsupported line-break tags with newlines.
-    import re
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = _fix_stray_entities(text)
     return text
