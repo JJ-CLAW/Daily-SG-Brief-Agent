@@ -43,7 +43,7 @@ def format_brief(
     lines.extend(
         [
             "",
-            f"<b>Singapore Weather (reported at {reported_time} SGT)</b>",
+            f"<b>SG Weather</b>",
             escape_html(weather.summary),
             escape_html(weather.umbrella_advice),
             "",

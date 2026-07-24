@@ -155,7 +155,7 @@ def generate_brief_with_gemini(
         "Do not invent headlines, URLs, or weather. "
         "WEATHER_TIME/WEATHER_SUMMARY/WEATHER_ADVICE are the reported time, conditions, and umbrella "
         "advice — include all three, do not drop the umbrella advice. The weather section header must "
-        "read exactly '<b>Singapore Weather (reported at WEATHER_TIME SGT)</b>' with the actual time "
+        "read exactly '<b>SG Weather</b>' "
         "filled in, followed by WEATHER_SUMMARY and WEATHER_ADVICE each on their own line. "
         "List top stories as a numbered list (1. 2. 3. ...), not bullets. "
         "Output ONLY Telegram HTML: use <b>, <i>, <a href=\"https://...\">, <code> as needed. "
