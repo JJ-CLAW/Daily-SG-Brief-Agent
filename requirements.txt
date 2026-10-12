@@ -5,3 +5,4 @@ python-dotenv>=1.0.0
 apscheduler>=3.10.4
 tzdata>=2024.1
 google-genai>=1.12.0
+selectolax<1.0  # googlenewsdecoder imports the Modest backend, removed in selectolax 1.0

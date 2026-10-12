@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import feedparser
 import httpx
-from googlenewsdecoder import gnewsdecoder
+try:
+    from googlenewsdecoder import gnewsdecoder
+except ImportError as _exc:  # keep the brief working without link decoding
+    print(f"[news] googlenewsdecoder unavailable ({_exc}); Google News links stay undecoded")
+    gnewsdecoder = None  # type: ignore[assignment]
 
 # Singapore-focused world/top stories via Google News RSS
 DEFAULT_RSS_URL = (
@@ -49,7 +53,7 @@ def _resolve_link(client: httpx.Client, link: str) -> str | None:
     except Exception:
         is_google_news = False
 
-    if is_google_news:
+    if is_google_news and gnewsdecoder is not None:
         try:
             result = gnewsdecoder(link, interval=1)
         except Exception as exc:

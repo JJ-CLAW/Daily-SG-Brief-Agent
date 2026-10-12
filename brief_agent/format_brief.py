@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from .fetch_air_quality import AirQualityReport
 from .fetch_weather import WeatherReport
 from .telegram_send import escape_html
 
@@ -21,6 +22,7 @@ def format_brief(
     weather: WeatherReport,
     motivation: str,
     when: datetime | None = None,
+    air: AirQualityReport | None = None,
 ) -> str:
     when = when or datetime.now(ZoneInfo("Asia/Singapore"))
     day = _friendly_date_singapore(when)
@@ -49,6 +51,15 @@ def format_brief(
             "",
         ]
     )
+
+    if air is not None:
+        lines.extend(
+            [
+                f"<b>SG Air Quality</b> (as of {escape_html(air.reading_time)})",
+                escape_html(air.summary),
+                "",
+            ]
+        )
 
     lines.extend(
         [

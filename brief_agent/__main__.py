@@ -14,6 +14,7 @@ from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 
+from .fetch_air_quality import fetch_singapore_air_quality
 from .fetch_news import DEFAULT_RSS_URL, fetch_top_headlines
 from .fetch_weather import fetch_singapore_weather
 from .format_brief import format_brief
@@ -50,6 +51,14 @@ def _print_gemini_failure_hints(err: BaseException) -> None:
             "GEMINI_MODEL to another Flash variant (e.g. gemini-2.5-flash-lite).",
             file=sys.stderr,
         )
+
+
+def _safe_air(client: httpx.Client, when: datetime):
+    try:
+        return fetch_singapore_air_quality(client, when)
+    except Exception as err:
+        print(f"Air quality fetch failed: {err}", file=sys.stderr)
+        return None
 
 
 def _env_path() -> Path:
@@ -101,9 +110,10 @@ def build_and_send() -> None:
                     client, url=rss, limit=headline_limit
                 )
                 weather = fetch_singapore_weather(client)
+                air = _safe_air(client, when)
                 motivation_lines = load_motivation_lines(motivations_path)
                 motivation = fetch_daily_motivation(client, motivation_lines, when)
-                message = format_brief(headlines, weather, motivation, when=when)
+                message = format_brief(headlines, weather, motivation, when=when, air=air)
         else:
             if gemini_key and generate_brief_with_gemini is None:
                 print(
@@ -113,9 +123,10 @@ def build_and_send() -> None:
                 )
             headlines = fetch_top_headlines(client, url=rss, limit=headline_limit)
             weather = fetch_singapore_weather(client)
+            air = _safe_air(client, when)
             motivation_lines = load_motivation_lines(motivations_path)
             motivation = fetch_daily_motivation(client, motivation_lines, when)
-            message = format_brief(headlines, weather, motivation, when=when)
+            message = format_brief(headlines, weather, motivation, when=when, air=air)
         if len(message) > 4000:
             message = message[:3997] + "..."
         send_telegram_html(client, token, chat_id, message)

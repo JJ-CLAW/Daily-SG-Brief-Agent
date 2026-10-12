@@ -13,6 +13,7 @@ import httpx
 from google import genai
 from google.genai import types
 
+from .fetch_air_quality import fetch_singapore_air_quality
 from .fetch_news import fetch_top_headlines
 from .fetch_weather import fetch_singapore_weather
 from .motivation import fetch_daily_motivation, load_motivation_lines
@@ -101,6 +102,16 @@ def generate_brief_with_gemini(
     except Exception as exc:
         print(f"[prefetch] weather failed: {exc}")
 
+    _prefetch_air = ""
+    _prefetch_air_time = ""
+    try:
+        _air = fetch_singapore_air_quality(http_client, when)
+        _prefetch_air = _air.summary
+        _prefetch_air_time = _air.reading_time
+        print(f"[prefetch] air quality: {_air.as_text!r}")
+    except Exception as exc:
+        print(f"[prefetch] air quality failed: {exc}")
+
     def get_rss_headlines(limit: int | None = None) -> dict:
         """Fetch top news headlines from the configured RSS feed (title and URL per story). Use for general news; prefer this over web_search for headlines."""
         try:
@@ -165,7 +176,9 @@ def generate_brief_with_gemini(
         "entities, etc.). Use the real Unicode character directly for things like em dashes (—) and "
         "degree signs (°); only escape a literal &, <, or > that is not part of a tag. "
         "Structure: greeting with the date, numbered top stories with clickable links when URLs exist, "
-        "Singapore weather (with reported time in the header and umbrella advice), thought for today "
+        "Singapore weather (with reported time in the header and umbrella advice), then an "
+        "'<b>SG Air Quality</b> (as of AIR_TIME)' section with AIR_QUALITY verbatim, keeping its "
+        "line break (omit the section if AIR_QUALITY is empty), thought for today "
         "(italic), short sign-off. "
         "Stay under 3800 characters."
     )
@@ -183,6 +196,8 @@ def generate_brief_with_gemini(
         f"WEATHER_TIME: {_prefetch_weather_time or 'unknown'}\n"
         f"WEATHER_SUMMARY: {_prefetch_weather_summary or 'unavailable'}\n"
         f"WEATHER_ADVICE: {_prefetch_weather_advice or ''}\n"
+        f"AIR_TIME: {_prefetch_air_time or 'unknown'}\n"
+        f"AIR_QUALITY: {_prefetch_air}\n"
         f"MOTIVATION: {_prefetch_motivation}\n"
         f"HEADLINES:\n{_headline_block}"
     )
