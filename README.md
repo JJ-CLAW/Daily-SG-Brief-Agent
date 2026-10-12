@@ -9,7 +9,8 @@
 A small Python tool that builds a **morning briefing** and sends it to **Telegram** as one HTML message. Each run includes:
 
 - **Headlines** from an RSS feed (default: [Google News Singapore EN](https://news.google.com/rss?hl=en-SG&gl=SG&ceid=SG:en))
-- **Singapore weather** (scraped from a public source used in code)
+- **Singapore weather** (via Open-Meteo) with umbrella advice
+- **Air quality (PSI)** — the latest official NEA reading at the time the message is sent (see below)
 - **Thought for today** — one line from `motivations.txt`, chosen deterministically for that calendar date in **Asia/Singapore** (same line all day)
 
 **Optional Gemini mode:** if you set `GEMINI_API_KEY`, the agent switches to an **AI-powered composition mode** using Google's Gemini with automatic function calling. Instead of a fixed template, Gemini acts as an intelligent agent that:
@@ -24,6 +25,33 @@ The agent follows a system instruction to create engaging morning briefings whil
 **V1:** The feature built has 2 execution modes as highlighted above - (1) deterministic and following a set sequence, where the script fetches all the responses and compiles it for the end user, and (2) an agentic mode where you plug & play your LLM (Gemini in my case) to allow the agent to choose which tools & message style it will deploy for a message to the end user. Toggling between (1) & (2) is simple, and just requires your LLM API key. However, there was a drawback where the PC needs to be online and run the script locally, in order for the end user to receive the daily brief on Telegram. 
 
 **V1.1:** Introduced capability to run the template script / agent online, hosted on Github servers. Surprised to find that it is FOC and easy to setup (1-time). Also added an agent fallback when RSS news retrieval fails, it can trigger the web_search tool for top news.
+
+**V1.2:** Added **air quality (PSI)** to the daily brief, and fixed a break in the cloud run caused by an update to one of the libraries it relies on. The brief now sends reliably again, and its headline fetching no longer depends on that library to keep working.
+
+## Air quality (PSI)
+
+Every brief now includes an **SG Air Quality** section, so you know whether to plan for haze before you step out:
+
+- **Official readings:** pulled from the National Environment Agency (NEA) via [data.gov.sg](https://data.gov.sg) — the same 24-hour PSI Singaporeans see in the news. No API key needed.
+- **Matched to send time:** it uses the most recent hourly reading at or before the moment the brief is sent, and shows the "as of" time.
+- **Easy to read:** a colour-coded band, the overall 24-hour PSI, the highest PM2.5 level, and the PSI for each region (North, South, East, West, Central).
+- **Never blocks the brief:** if the NEA data is unavailable, the brief is still sent without that section.
+
+| PSI | Band |
+|-----|------|
+| 0–50 | 🟢 Good |
+| 51–100 | 🟡 Moderate |
+| 101–200 | 🟠 Unhealthy |
+| 201–300 | 🔴 Very unhealthy |
+| 301+ | 🟣 Hazardous |
+
+Example:
+
+```
+SG Air Quality (as of 6:00 PM)
+🟠 Unhealthy — 24h PSI 154, PM2.5 107 µg/m³ (highest region)
+North 116, South 121, East 139, West 153, Central 154
+```
 
 ## Requirements
 
@@ -111,8 +139,9 @@ Run the script from PowerShell (adjust execution policy if needed):
 
 | Path | Role |
 |------|------|
-| `brief_agent/` | Package: fetch news/weather, format message, Telegram send |
+| `brief_agent/` | Package: fetch news/weather/air quality, format message, Telegram send |
 | `brief_agent/__main__.py` | CLI entry (`once`, `serve`) |
+| `brief_agent/fetch_air_quality.py` | NEA PSI readings for the brief |
 | `brief_agent/gemini_brief.py` | Optional Gemini tool loop → HTML brief |
 | `brief_agent/web_search.py` | DuckDuckGo instant answer helper for `web_search` |
 | `motivations.txt` | Daily quote pool |
@@ -132,6 +161,8 @@ Overall agent building (using Gemini as the LLM) and local deployment for simple
 
 - **Missing token / chat id** — Fill `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env`.
 - **403 / bots can’t send messages to bots** — Use your personal user `chat.id`, not a bot account.
+- **Daily GitHub run failing** — Check the failed run's log on the Actions tab; the most common causes are an expired secret or a third-party library update. Re-run the workflow after fixing.
+- **No air quality section** — The NEA data was likely unavailable at send time; the brief is sent without it.
 - **Empty or broken headlines** — Check network, RSS URL, or rate limits on the feed provider.
 - Errors from Telegram are raised as `RuntimeError` with HTTP status and API `description` when available (the bot token is not repeated in that message).
 
